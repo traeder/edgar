@@ -141,9 +141,31 @@ class EdgarDownloader:
         # Save the filing
         filename = f"{accession_number}.html"
         file_path = os.path.join(save_path, filename)
+
+        soup = BeautifulSoup(filing_response.content, 'html.parser')
+    
+        # Remove script and style elements
+        for script_or_style in soup(['script', 'style', 'noscript', 'head', 'br', 'hr']):
+            script_or_style.decompose()
         
-        with open(file_path, 'wb') as f:
-            f.write(filing_response.content)
+        # Remove hidden divs (often contain duplicate content)
+        for hidden_div in soup.find_all('div', style=lambda value: value and 'display:none' in value):
+            hidden_div.decompose()
+
+        # Replace font and div tags with their contents
+        for tag in soup.find_all(['font', 'div', 'a', 'sup', 'b']):
+            tag.replace_with_children()
+
+        for tag in soup.find_all(True):  # Find all tags
+            if tag.has_attr('style'):
+                del tag['style']
+        
+        # Get text and handle special characters
+        #text = soup.get_text(separator=' ', strip=True)
+        text = soup.prettify()
+        
+        with open(file_path, 'w') as f:
+            f.write(text)
             
         return file_path
 
