@@ -5,6 +5,9 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from datetime import datetime
 import logging
+import xml.etree.ElementTree as ET
+import re
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -55,25 +58,30 @@ class EdgarDownloader:
         
         response = self._make_request(f"{self.edgar_url}", params=params)
         #print(response.content)
-        soup = BeautifulSoup(response.content, 'lxml')
-        
-        filings = []
-        filing_entries = soup.find_all('entry')
-        
-        for entry in filing_entries:
-            filing_info = {
-                'company': entry.find('conformed-name').text.strip(),
-                'filing_type': entry.find('type').text.strip(),
-                'filing_date': entry.find('filing-date').text.strip(),
-                'filing_href': entry.find('filing-href').text.strip(),
-                'filing_accession_number': entry.find('accession-number').text.strip()
-            }
-            filings.append(filing_info)
-            print(f"=== {filing_info['company']} ===")
-            
-        return filings
+        # Parse the XML
+        root = ET.fromstring(response.content)
     
-    def download_filing(self, accession_number, save_path):
+        # Find all filing elements and extract their HREF values
+        filing_hrefs = []
+        
+        # Navigate to filings in the results section
+        filings = root.findall('.//filing')
+        
+        infos = []
+        for filing in filings:
+            filing_info = {
+                'href': filing.find('filingHREF').text.strip(),
+                'type': filing.find('type').text.strip(),
+                'filing_date': filing.find('dateFiled').text.strip()
+            }
+            filing_info['filing_accession_number'] = filing_info['href'].split('/')[-2]
+            
+            infos.append(filing_info)
+            print(filing_info)
+
+        return infos
+    
+    def download_filing(self, filing, save_path):
         """
         Download a specific filing document by accession number
         
@@ -83,12 +91,11 @@ class EdgarDownloader:
             
         Returns:
             Path to the saved filing
-        """
-        # Format accession number for URL
-        formatted_accession = accession_number.replace('-', '')
-        
+        """        
         # Get the index page for this filing
-        index_url = f"{self.base_url}/edgar/data/{formatted_accession[0:10]}/{formatted_accession}/{accession_number}-index.html"
+        index_url = filing['href']
+        accession_number = filing['filing_accession_number']
+        print(index_url)
         response = self._make_request(index_url)
         soup = BeautifulSoup(response.content, 'html.parser')
         
@@ -163,19 +170,11 @@ class EdgarDownloader:
         results = []
         
         for filing in filings:
-            try:
-                accession_number = filing['filing_accession_number']
-                file_path = self.download_filing(accession_number, company_dir)
-                
-                filing['local_path'] = file_path
-                filing['download_status'] = 'Success'
-                print(f"Downloaded {filing_type} for {ticker} filed on {filing['filing_date']}")
-                
-            except Exception as e:
-                filing['local_path'] = None
-                filing['download_status'] = f"Failed: {str(e)}"
-                print(f"Failed to download {filing_type} for {ticker}: {str(e)}")
-                
+            file_path = self.download_filing(filing, company_dir)
+            
+            filing['local_path'] = file_path
+            filing['download_status'] = 'Success'
+            print(f"Downloaded {filing_type} for {ticker} filed on {filing['filing_date']}")
             results.append(filing)
             
         # Create a summary DataFrame
@@ -196,6 +195,6 @@ if __name__ == "__main__":
     apple_filings = downloader.download_multiple_filings("AAPL", "10-K", count=3, save_dir="sec_filings")
     
     # Download most recent 10-Q filings for Tesla
-    tesla_filings = downloader.download_multiple_filings("TSLA", "10-Q", count=3, save_dir="sec_filings")
+    #tesla_filings = downloader.download_multiple_filings("TSLA", "10-Q", count=3, save_dir="sec_filings")
     
     print("Download complete!")
