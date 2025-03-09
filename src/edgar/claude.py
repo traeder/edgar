@@ -1,5 +1,6 @@
 import requests
 import os
+import json
 
 def send_message_to_claude(prompt, model="claude-3-7-sonnet-20250219", max_tokens=1000):
     """

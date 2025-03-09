@@ -1,1 +1,3 @@
-lxml
+edgartools
+requests
+pysolr

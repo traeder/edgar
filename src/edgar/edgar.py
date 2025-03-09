@@ -2,10 +2,9 @@ import requests
 import os
 import time
 from bs4 import BeautifulSoup
-import pandas as pd
-from datetime import datetime
 import logging
 import xml.etree.ElementTree as ET
+from html_to_markdown import convert_to_markdown
 import re
 
 
@@ -132,40 +131,16 @@ class EdgarDownloader:
         # Create save directory if it doesn't exist
         os.makedirs(save_path, exist_ok=True)
         
-        # Extract filing type and date from accession number for filename
-        date_part = accession_number.split('-')[0]
-        year = date_part[0:4]
-        month = date_part[4:6]
-        day = date_part[6:8]
-        
         # Save the filing
-        filename = f"{accession_number}.html"
+        filename = f"{accession_number}.md"
         file_path = os.path.join(save_path, filename)
-
         soup = BeautifulSoup(filing_response.content, 'html.parser')
-    
-        # Remove script and style elements
-        for script_or_style in soup(['script', 'style', 'noscript', 'head', 'br', 'hr']):
-            script_or_style.decompose()
-        
-        # Remove hidden divs (often contain duplicate content)
-        for hidden_div in soup.find_all('div', style=lambda value: value and 'display:none' in value):
-            hidden_div.decompose()
-
-        # Replace font and div tags with their contents
-        for tag in soup.find_all(['font', 'div', 'a', 'sup', 'b']):
-            tag.replace_with_children()
-
-        for tag in soup.find_all(True):  # Find all tags
-            if tag.has_attr('style'):
-                del tag['style']
-        
-        # Get text and handle special characters
-        #text = soup.get_text(separator=' ', strip=True)
-        text = soup.prettify()
+        base = soup.prettify()
+        base = re.sub(r'\s+', ' ', base).strip()
+        markdown = convert_to_markdown(base)
         
         with open(file_path, 'w') as f:
-            f.write(text)
+            f.write(markdown)
             
         return file_path
 
@@ -198,15 +173,6 @@ class EdgarDownloader:
             filing['download_status'] = 'Success'
             print(f"Downloaded {filing_type} for {ticker} filed on {filing['filing_date']}")
             results.append(filing)
-            
-        # Create a summary DataFrame
-        df = pd.DataFrame(results)
-        
-        # Save summary to CSV
-        summary_path = os.path.join(save_dir, f"{ticker}_{filing_type}_filings.csv")
-        df.to_csv(summary_path, index=False)
-        
-        return df
 
 # Example usage
 if __name__ == "__main__":
