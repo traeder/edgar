@@ -1,3 +1,4 @@
 edgartools
 requests
 pysolr
+chromadb

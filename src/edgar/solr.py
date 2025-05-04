@@ -1,6 +1,7 @@
 import pysolr
 import json
 import requests
+import subprocess
 
 # Connect to Solr
 solr = pysolr.Solr('http://localhost:8983/solr/sec_filings/', always_commit=True)
@@ -66,10 +67,30 @@ def define_schema():
             "indexed": True,
             "stored": False,
             "multiValued": True
-        }
-        ] + [
+        },
+        {
+            "name": "all_summaries",
+            "type": "text_sec",
+            "indexed": True,
+            "stored": False,
+            "multiValued": True
+        }] + [
             {"name": f"item{c}", "type": "text_sec", "indexed": True, "stored": True}
             for c in ['1', '1A', '1B', '1C', 2, 3, 4, 5, 6, 7, '7A', 8, 9, '9A', '9B', '9C', 10, 11, 12, 13, 14, 15, 16]
+        ]
+        + [
+            {"name": f"item{c}_summary", "type": "text_sec", "indexed": True, "stored": True}
+            for c in ['1', '1A', '1B', '1C', 2, 3, 4, 5, 6, 7, '7A', 8, 9, '9A', '9B', '9C', 10, 11, 12, 13, 14, 15, 16]
+        ]
+    }
+
+    copy_fields = {
+        "add-copy-field": [
+            {"source": f['name'], "dest": ["all_text"]}
+            for f in fields['add-field'] if f['name'].startswith('item') and not f['name'].endswith('summary')
+        ] + [
+            {"source": f['name'], "dest": ["all_summaries"]}
+            for f in fields['add-field'] if f['name'].endswith('summary')
         ]
     }
     
@@ -78,32 +99,24 @@ def define_schema():
     
     # Send field definitions
     response = requests.post(schema_url, json=fields)
+
+    # Set unique key
+    unique_key = {
+        "set-unique-key": "filing_id"
+    }
+    response = requests.post(schema_url, json=unique_key)
+
+    # don't need this yet
+    #response = requests.post(schema_url, json=copy_fields)
+
     
     return response.json()
-
-def summarize_with_claude(text):
-    msg = f"The following is text from a company's SEC filing.  Act as a financial analyst and summarize the most important elements with bullet points: <text>{text}</text>"
-    return send_message_to_claude(msg, max_tokens=50_000, api_key=claude_api_key)
-
-
-# Example of indexing a SEC filing
-def index_filing(company, filing, raise_errors=True):
-    try:
-        j = filing_to_json(company, filing)
-        for s in ['1', '1a', '7a']:
-            j[f'item{s}_summary'] = summarize_with_claude(j[f'item{s}'])
-        solr.add([j], commit=True, overwrite=True)
-    except Exception as e:
-        print(e)
-        if raise_errors:
-            raise e
 
 def reload_core():
     core_url = 'http://localhost:8983/solr/admin/cores'
     params = {'action': 'RELOAD', 'core': 'sec_filings'}
     response = requests.get(core_url, params=params)
     return response.json()
-
 
 def delete_core():
     solr_admin_url = 'http://localhost:8983/solr/admin'
@@ -119,3 +132,13 @@ def delete_core():
     response = requests.get(delete_url, params=params)
     print(f"Core deletion response: {response.json()}")
     return response.json()
+
+def recreate_db():
+    delete_core()
+    subprocess.run(['mkdir', '-p', '/Users/troyraeder/Downloads/solr/solr-9.8.0/server/solr/sec_filings/conf'])
+    p = subprocess.run(
+        'cp -r /Users/troyraeder/Downloads/solr/solr-9.8.0/server/solr/configsets/_default/conf/* /Users/troyraeder/Downloads/solr/solr-9.8.0/server/solr/sec_filings/conf'
+        ,shell=True)
+    print(p)
+    create_core()
+    define_schema()
