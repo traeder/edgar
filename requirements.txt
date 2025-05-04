@@ -2,3 +2,4 @@ edgartools
 requests
 pysolr
 chromadb
+openai
